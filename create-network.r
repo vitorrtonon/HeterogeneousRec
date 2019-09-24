@@ -1,5 +1,15 @@
 library(reshape2)
 
+increment.type <- function(type.i, type) {
+
+	if(type.i == length(type)) 
+		type.i = 1
+	else
+		type.i = type.i + 1
+
+	return(type.i)
+}
+
 fold.i = 1
 directory = paste0("data/frappe/folds/fold", fold.i, "/") 
 
@@ -33,14 +43,52 @@ users = rownames(user.item)
 #			choose one according to probability 1/length
 #			push type t into metapath
 
-type.i = 1
-for (user in users) {
+generate.random.walks.from.metapaths <- function(type = c(1,2),
+												adj.matrix.list=list(user.item, t(user.item)),
+												walks.per.node = 1000,
+												max.walk.length = 100) {
+	count = 1
+	all.walks = list()
 
-	for(count in 1:walks.per.node) {
+	for (j in 1:length(users)) {
 
-		while(wl < walk.length && type[current.node] != "user") {
+		user = users[j]
 
+		for(count in 1:walks.per.node) {
 
+			walk.length = 1
+
+			previous.selected.node = user
+			walk = c(user)
+
+			type.i = 1
+
+			while(walk.length <= max.walk.length || type.i != 1) {
+
+				nodes.ids = which(adj.matrix.list[[type.i]][previous.selected.node,] != 0)
+			
+				if(length(nodes.ids) > 0) 
+					selected.node.id = sample(x=nodes.ids, size=1)
+				else 
+					selected.node.id = sample(x=length(colnames(adj.matrix.list[[type.i]])), size=1)
+				
+				selected.node = colnames(adj.matrix.list[[type.i]])[selected.node.id]
+
+				type.i = increment.type(type.i, type)
+
+				walk = c(walk, selected.node)
+				previous.selected.node = selected.node
+
+				walk.length = walk.length + 1
+			}
+		
+			all.walks[[count]] = walk
+			count = count + 1
 		}
+
+		cat('Finished: ', j / length(users) * 100, '%\n')
 	}
+
+	return(all.walks)
 }
+
