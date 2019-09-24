@@ -54,7 +54,7 @@ generate.random.walks.from.metapaths <- function(type = c(1,2),
 
 		user = users[j]
 
-		for(count in 1:walks.per.node) {
+		for(n.walks in 1:walks.per.node) {
 
 			walk.length = 1
 
