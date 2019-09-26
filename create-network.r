@@ -74,13 +74,17 @@ generate.random.walks.from.metapaths <- function(type = c(1,2),
 
 library(doParallel)
 
-cl = makeCluster(4)
+cl = makeCluster(3)
 clusterEvalQ(cl, .libPaths())
 registerDoParallel(cl)
 
-foreach(fold.i=1:10) %dopar% {
-#for(fold.i in 1:10) {
+#foreach(fold.i=1:10) %dopar% {
+for(fold.i in 1:1) {
+
 	library(reshape2)
+	library(lsa)
+	library(wordVectors)
+
 	cat('Starting fold #', fold.i, '\n')
 
 	directory = paste0("data/frappe/folds/fold", fold.i, "/") 
@@ -100,7 +104,8 @@ foreach(fold.i=1:10) %dopar% {
 	item.context = acast(data, item_id ~ context, value.var="rating", fun.aggregate=mean)
 	item.context[is.nan(item.context)] = 0
 
-	users = rownames(user.item)
+   users = rownames(user.item)
+ 	items = colnames(user.item)
 
 	type = c(1,2)
 	adj.matrix.list = list(user.item, t(user.item))
@@ -113,7 +118,29 @@ foreach(fold.i=1:10) %dopar% {
 	lapply(walks, function(x) { write.table(t(data.frame(x)), file=paste0(directory, "walk_uiciu.txt"), sep=" ", append=T, col.names=F, row.names=F, quote=F) } )
 
 	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiu.txt -output ', directory, 'train_uiu.emb -pp 1 -size 100 -min-count 0'))
-}
+	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiciu.txt -output ', directory, 'train_uiciu.emb -pp 1 -size 100 -min-count 0'))
 
+	
+	topN = 10
+	embeddings.uiu = read.binary.vectors(paste0(directory, "train_uiu.emb"))
+	embeddings.uiciu = read.binary.vectors(paste0(directory, "train_uiciu.emb"))
+
+	items.embeddings.ids = grep("vI_", rownames(embeddings.uiu))
+	items.embeddings = embeddings.uiu[items.embeddings.ids,]
+	all.recommendations = data.frame() 
+	for(user in users) {
+
+		user.embedding.uiu = embeddings.uiu[user,]
+	#	user.embedding.uiciu = embedding.uiciu[user,]
+
+		item.similarities = apply(items.embeddings, 1, function(row) { cosine(as.numeric(user.embedding.uiu), as.numeric(row)) } )
+		topN.items = names(sort(item.similarities, dec=T)[1:topN])
+
+		all.recommendations = rbind(all.recommendations, t(data.frame(topN.items)))
+	}
+
+	rownames(all.recommendations) = users
+	write.table(all.recommendations, file=paste0(directory, 'recommendations_uiu.csv'), sep=",", row.names=T, col.names=F, quote=F)
+}
 
 
