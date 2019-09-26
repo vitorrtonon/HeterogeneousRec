@@ -10,29 +10,6 @@ increment.type <- function(type.i, type) {
 	return(type.i)
 }
 
-fold.i = 1
-directory = paste0("data/frappe/folds/fold", fold.i, "/") 
-
-data = read.csv(paste0(directory, "train.csv"))
-colnames(data) = c("user_id", "item_id", "context", "rating")
-data[,'user_id'] = paste0('U_', data[,'user_id'])
-data[,'item_id'] = paste0('I_', data[,'item_id'])
-data[,'context'] = paste0('C_', data[,'context'])
-
-user.item = acast(data, user_id ~ item_id, value.var="rating", fun.aggregate=mean)
-user.item[is.nan(user.item)] = 0
-
-user.context = acast(data, user_id ~ context, value.var="rating", fun.aggregate=mean)
-user.context[is.nan(user.context)] = 0
-
-item.context = acast(data, item_id ~ context, value.var="rating", fun.aggregate=mean)
-item.context[is.nan(item.context)] = 0
-
-
-users = rownames(user.item)
-
-##################################################################################3
-
 # METAPATH UIU
 
 # for each node U
@@ -86,9 +63,57 @@ generate.random.walks.from.metapaths <- function(type = c(1,2),
 			count = count + 1
 		}
 
-		cat('Finished: ', j / length(users) * 100, '%\n')
+		#cat('Finished: ', j / length(users) * 100, '%\n')
 	}
 
 	return(all.walks)
 }
+
+
+# Generate Random Walks for all folds
+
+library(doParallel)
+
+cl = makeCluster(4)
+clusterEvalQ(cl, .libPaths())
+registerDoParallel(cl)
+
+foreach(fold.i=1:10) %dopar% {
+#for(fold.i in 1:10) {
+	library(reshape2)
+	cat('Starting fold #', fold.i, '\n')
+
+	directory = paste0("data/frappe/folds/fold", fold.i, "/") 
+
+	data = read.csv(paste0(directory, "train.csv"))
+	colnames(data) = c("user_id", "item_id", "context", "rating")
+	data[,'user_id'] = paste0('aU_', data[,'user_id'])
+	data[,'item_id'] = paste0('vI_', data[,'item_id'])
+	data[,'context'] = paste0('iC_', data[,'context'])
+
+	user.item = acast(data, user_id ~ item_id, value.var="rating", fun.aggregate=mean)
+	user.item[is.nan(user.item)] = 0
+
+	user.context = acast(data, user_id ~ context, value.var="rating", fun.aggregate=mean)
+	user.context[is.nan(user.context)] = 0
+
+	item.context = acast(data, item_id ~ context, value.var="rating", fun.aggregate=mean)
+	item.context[is.nan(item.context)] = 0
+
+	users = rownames(user.item)
+
+	type = c(1,2)
+	adj.matrix.list = list(user.item, t(user.item))
+	walks = generate.random.walks.from.metapaths(type, adj.matrix.list,1,1)
+	lapply(walks, function(x) { write.table(t(data.frame(x)), file=paste0(directory, "walk_uiu.txt"), append=T, sep=" ", col.names=F, row.names=F, quote=F) } )
+	
+	type = c(1,2,3,4)
+	adj.matrix.list = list(user.item, item.context, t(item.context), t(user.item))
+	walks = generate.random.walks.from.metapaths(type, adj.matrix.list,1,1)
+	lapply(walks, function(x) { write.table(t(data.frame(x)), file=paste0(directory, "walk_uiciu.txt"), sep=" ", append=T, col.names=F, row.names=F, quote=F) } )
+
+	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiu.txt -output ', directory, 'train_uiu.emb -pp 1 -size 100 -min-count 0'))
+}
+
+
 
