@@ -1,4 +1,10 @@
-library(reshape2)
+library(foreach)
+library(iterators)
+library(doParallel)
+
+cl = makeCluster(10)
+clusterEvalQ(cl, .libPaths(c(.libPaths())))
+registerDoParallel(cl)
 
 increment.type <- function(type.i, type) {
 
@@ -72,16 +78,12 @@ generate.random.walks.from.metapaths <- function(type = c(1,2),
 
 # Generate Random Walks for all folds
 
-library(doParallel)
 
-cl = makeCluster(3)
-clusterEvalQ(cl, .libPaths())
-registerDoParallel(cl)
-
-#foreach(fold.i=1:10) %dopar% {
-for(fold.i in 1:1) {
+foreach(fold.i=1:10) %dopar% {
+#for(fold.i in 1:1) {
 
 	library(reshape2)
+	library(SnowballC)
 	library(lsa)
 	library(wordVectors)
 
@@ -109,38 +111,46 @@ for(fold.i in 1:1) {
 
 	type = c(1,2)
 	adj.matrix.list = list(user.item, t(user.item))
-	walks = generate.random.walks.from.metapaths(type, adj.matrix.list,1,1)
+	walks = generate.random.walks.from.metapaths(type, adj.matrix.list)
 	lapply(walks, function(x) { write.table(t(data.frame(x)), file=paste0(directory, "walk_uiu.txt"), append=T, sep=" ", col.names=F, row.names=F, quote=F) } )
 	
 	type = c(1,2,3,4)
 	adj.matrix.list = list(user.item, item.context, t(item.context), t(user.item))
-	walks = generate.random.walks.from.metapaths(type, adj.matrix.list,1,1)
+	walks = generate.random.walks.from.metapaths(type, adj.matrix.list)
 	lapply(walks, function(x) { write.table(t(data.frame(x)), file=paste0(directory, "walk_uiciu.txt"), sep=" ", append=T, col.names=F, row.names=F, quote=F) } )
 
-	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiu.txt -output ', directory, 'train_uiu.emb -pp 1 -size 100 -min-count 0'))
-	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiciu.txt -output ', directory, 'train_uiciu.emb -pp 1 -size 100 -min-count 0'))
+	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiu.txt -output ', directory, 'train_uiu.emb -pp 1 -size 100 -min-count 0 -threads 1'))
+	system(paste0('code_metapath2vec/metapath2vec -train ', directory, 'walk_uiciu.txt -output ', directory, 'train_uiciu.emb -pp 1 -size 100 -min-count 0 -threads 1'))
 
-	
+       
 	topN = 10
 	embeddings.uiu = read.binary.vectors(paste0(directory, "train_uiu.emb"))
 	embeddings.uiciu = read.binary.vectors(paste0(directory, "train_uiciu.emb"))
 
 	items.embeddings.ids = grep("vI_", rownames(embeddings.uiu))
 	items.embeddings = embeddings.uiu[items.embeddings.ids,]
-	all.recommendations = data.frame() 
+	all.recommendations.uiu = data.frame() 
+	all.recommendations.uiciu = data.frame() 
 	for(user in users) {
 
 		user.embedding.uiu = embeddings.uiu[user,]
-	#	user.embedding.uiciu = embedding.uiciu[user,]
+		user.embedding.uiciu = embeddings.uiciu[user,]
 
 		item.similarities = apply(items.embeddings, 1, function(row) { cosine(as.numeric(user.embedding.uiu), as.numeric(row)) } )
 		topN.items = names(sort(item.similarities, dec=T)[1:topN])
+		all.recommendations.uiu = rbind(all.recommendations.uiu, t(data.frame(topN.items)))
 
-		all.recommendations = rbind(all.recommendations, t(data.frame(topN.items)))
+		item.similarities = apply(items.embeddings, 1, function(row) { cosine(as.numeric(user.embedding.uiciu), as.numeric(row)) } )
+		topN.items = names(sort(item.similarities, dec=T)[1:topN])
+		all.recommendations.uiciu = rbind(all.recommendations.uiciu, t(data.frame(topN.items)))
 	}
 
-	rownames(all.recommendations) = users
-	write.table(all.recommendations, file=paste0(directory, 'recommendations_uiu.csv'), sep=",", row.names=T, col.names=F, quote=F)
+	rownames(all.recommendations.uiu) = users
+	write.table(all.recommendations.uiu, file=paste0(directory, 'recommendations_uiu.csv'), sep=",", row.names=T, col.names=F, quote=F)
+
+	rownames(all.recommendations.uiciu) = users
+	write.table(all.recommendations.uiciu, file=paste0(directory, 'recommendations_uiciu.csv'), sep=",", row.names=T, col.names=F, quote=F)
+
 }
 
 
